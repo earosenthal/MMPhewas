@@ -3,15 +3,12 @@
 # step2: Create sparse kinship matrix
 # step3: Perform null model
 # step4: Perform association
+# step5: Convert assocation results into format for phewas plotting
 
-install.packages("devtools")
-#It may be necessary to install required as not all package dependencies are installed by devtools:
-install.packages(c("dplyr","tidyr","ggplot2","MASS","meta","ggrepel","DT"))
-devtools::install_github("PheWAS/PheWAS")
-library(PheWAS)
 
 
 library(data.table)
+library(tidyverse)
 library(Hmisc)
 
 #step 1 Transform phecodes into a VCF file
@@ -28,6 +25,13 @@ phecode.cols <- names(phecodes.dt)[-1]
 positions <- copy(phecode.names)#the phecode names can be treated as positions.
 chr <- rep(1,length(positions))
 
+#create a phecode map that will be used later in step 5
+map.dt <- data.table(data.frame(pos=format(1000*as.numeric(positions),scientific=FALSE),PHECODE=phecode.names))
+map.dt[,pos:=as.numeric(pos)]
+
+#####
+# tidyverse function case_when()
+#####
 # Function to replace -9 with NA, make it 1's and 0's 
 # instead of 2's and 1's, make it logical
 fix.input <- function(vec)
@@ -35,12 +39,14 @@ fix.input <- function(vec)
   (ifelse(vec<0,NA,vec-1))
 }
 
-# Fucntion to convert 0,1,NA to genotype
+# Function to convert 0,1,NA to genotype
 make.gt <- function(vec)
 {
-  vec <- ifelse(vec=="0","0/0",vec)
-  vec <- ifelse(vec=="1","1/0",vec)
-  ifelse(is.na(vec),"./.",vec)
+    case_when( # do I need to specify the library?
+    vec=="0" ~ "0/0",
+    vec=="1" ~ "1/0",
+    is.na(vec) ~ "./."
+  )
 }
 
 phecodes.dt[,(phecode.cols) := lapply(.SD,fix.input), .SDcols=phecode.cols]
@@ -48,18 +54,19 @@ phecodes.dt[,(phecode.cols) := lapply(.SD,make.gt), .SDcols=phecode.cols]
 str(phecodes.dt)
 
 #need to add columns so that when I output the data, it looks like a vcf
+
 map <- data.frame(CHROM=chr,
-                  POS=format(1000*as.numeric(positions),scientific=FALSE),
-                  ID=positions,REF=rep("A",length(positions)),
-                  ALT=rep("G",length(positions)),
-                  QUAL=rep(10,length(positions)),
-                  FILTER=rep("PASS",length(positions)),
-                  INFO=rep(".",length(positions)),
-                  FORMAT=rep("GT",length(positions)))
+            POS=format(1000*as.numeric(positions),scientific=FALSE),
+            ID=positions,REF="A", ALT="G", QUAL=10, FILTER="PASS",
+            INFO=".",FORMAT="GT")
 str(map)
 
 #create the GT portion of the VCF file
 ids <- phecodes.dt$id.sample
+ids <- as.character(ids)
+#below code might be necessary when using really long ID names
+#ids <- format(phecodes.dt$id.sample,scientific=FALSE)
+
 phecodes.dt[,id.sample:=NULL]
 geno <- data.frame(t(as.matrix(phecodes.dt)))
 colnames(geno) <- ids
@@ -69,22 +76,23 @@ setnames(output,"CHROM","#CHROM")
 
 write("##fileformat=VCFv4.0",file="phecode-example.vcf")
 write.table(output,file="phecode-example.vcf",sep="\t",
-            quote=FALSE,row.names=FALSE,
-            append=TRUE)
-
+            quote=FALSE, row.names=FALSE, append=TRUE)
+# ignore the warning. How do I make it so that the warning about 
+# column names doesn't appear?
 ##################
 # step 2 Create sparse kinship matrix
 #################
 library(GENESIS)
 relatives.dt <- fread("relatives.txt")
-relatives.dt <- relatives.dt[][relatives.dt$ID1 %in% ids & 
-                              relatives.dt$ID2 %in% ids]
-#attach(relatives.dt)
+relatives.dt <- relatives.dt[][relatives.dt$ID1 %in% as.numeric(ids) & 
+                              relatives.dt$ID2 %in% as.numeric(ids)]
+# need the following when IDs are long
+#relatives.dt[,ID1:=format(ID1,scientific=FALSE)]
+#relatives.dt[,ID2:=format(ID2,scientific=FALSE)]
 
 # create the triplet form that is needed for a sparse matrix
 #start with the diagonals, and then add on
-#related.ids <- unique(sort(c(ID1,ID2)))
-#detach(relatives.dt)
+
 row.id <- ids
 col.id <- ids
 kin.value <- rep(1,length(ids))
@@ -95,11 +103,14 @@ colnames(kin.dt) <- c("ID1","ID2","value")
 str(kin.dt)
 kin.dt[,ID1:=as.character(ID1)]
 kin.dt[,ID2:=as.character(ID2)]
+# when IDs are long use
+#kin.dt[,ID1:=as.character(format(ID1,scientific=FALSE))]
+#kin.dt[,ID2:=as.character(format(ID2,scientific=FALSE))]
+
 kin.dt[,value:=as.numeric(value)]
 
 
 kin.mat.gen.sparse <- makeSparseMatrix(kin.dt,thresh=NULL)
-
 
 ##################
 # step 3 Perform null model
@@ -114,6 +125,7 @@ library(Biobase)
 phenotype.dt <- fread("phenotype-example.csv")
 str(phenotype.dt)
 setnames(phenotype.dt,"id.sample","sample.id")
+
 phenotype.dt[,sample.id:=as.character(sample.id)]
 my.dat <- as.data.frame(phenotype.dt)
 
@@ -148,11 +160,40 @@ nullmod <- fitNullModel(seqData, outcome = "prs.total",
 ##################
 iterator <- SeqVarBlockIterator(seqData, verbose=FALSE)
 assoc <- assocTestSingle(iterator, nullmod)
-assoc
+assoc.dt <- data.table(assoc)
 
+##################
+# step 5 Convert assocation results into format for phewas plotting
+##################
 
+### If PheWAS package needs to be installed use the following
+#install.packages("devtools")
+#It may be necessary to install required as not all package dependencies are installed by devtools:
+#install.packages(c("dplyr","tidyr","ggplot2","MASS","meta","ggrepel","DT"))
+#devtools::install_github("PheWAS/PheWAS")
 
+library(PheWAS)
 
+# merge the phecode map with the association results
+setkey(assoc.dt,"pos")
+setkey(map.dt,"pos")
+mmphewas.dt <- map.dt[assoc.dt]
+
+# set the names needed for the parts of the data frame 
+# used by phewasManhattan
+setnames(mmphewas.dt,c("PHECODE","Est","Est.SE","Score.pval","n.obs"),
+         c("phenotype","beta","SE","p","n_total"))
+
+# plot the association results
+png("mmphewas.png", width=3300,height=2550)
+phewasManhattan(mmphewas.dt, max.y=0.75,size.x.labels=40, size.y.labels=40, 
+                annotate.size=15, point.size=10) +
+  labs(title="Mixed Model PheWAS Example") + 
+  theme(title=element_text(size=40))
+dev.off()
+
+# why do I only see three points and not 4? 
+# Do I need a larger example for better plotting results
 
 #####################
 ### removed code
@@ -174,3 +215,14 @@ kin.dt <- as.data.table(cbind(as.character(row.id),as.character(col.id),
 colnames(kin.dt) <- c("ID1","ID2","value")
 str(kin.dt)
 kin.dt[,value:=as.numeric(value)]
+
+#try to shorten code for sparse matrix, but doesn't work.
+# Is it a bug in GENESIS, or am I making
+# a mistake somewhere
+relatives.dt[,ID1:=as.character(format(ID1,scientific=FALSE))]
+relatives.dt[,ID2:=as.character(format(ID2,scientific=FALSE))]
+relatives.dt[,KIN:=as.numeric(KIN)]
+
+kin.mat.gen.sparse <- makeSparseMatrix(relatives.dt, 
+                                       sample.include=ids,
+                                       diag.value=1, thresh=NULL)

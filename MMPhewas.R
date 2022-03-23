@@ -3,7 +3,7 @@
 # step2: Create sparse kinship matrix
 # step3: Perform null model
 # step4: Perform association
-# step5: Convert assocation results into format for phewas plotting
+# step5: Convert association results into format for phewas plotting
 
 
 
@@ -12,8 +12,8 @@ library(tidyverse)
 library(Hmisc)
 
 #step 1 Transform phecodes into a VCF file
-phecodes.dt <- fread("phecode-example.txt")
-str(phecodes.dt)
+
+phecodes.dt = data.table(phenotypes) #created with create-phecodes.R
 # save the actual names to a vector
 phecode.names <- names(phecodes.dt)[-1]
 # get usable names for R
@@ -32,24 +32,17 @@ map.dt[,pos:=as.numeric(pos)]
 #####
 # tidyverse function case_when()
 #####
-# Function to replace -9 with NA, make it 1's and 0's 
-# instead of 2's and 1's, make it logical
-fix.input <- function(vec)
-{
-  (ifelse(vec<0,NA,vec-1))
-}
 
-# Function to convert 0,1,NA to genotype
+# Function to convert T/F,NA to genotype
 make.gt <- function(vec)
 {
-    case_when( # do I need to specify the library?
-    vec=="0" ~ "0/0",
-    vec=="1" ~ "1/0",
+    case_when( 
+    vec==FALSE ~ "0/0",
+    vec==TRUE ~ "1/0",
     is.na(vec) ~ "./."
   )
 }
 
-phecodes.dt[,(phecode.cols) := lapply(.SD,fix.input), .SDcols=phecode.cols]
 phecodes.dt[,(phecode.cols) := lapply(.SD,make.gt), .SDcols=phecode.cols]
 str(phecodes.dt)
 
@@ -62,12 +55,10 @@ map <- data.frame(CHROM=chr,
 str(map)
 
 #create the GT portion of the VCF file
-ids <- phecodes.dt$id.sample
+ids <- phecodes.dt$id
 ids <- as.character(ids)
-#below code might be necessary when using really long ID names
-#ids <- format(phecodes.dt$id.sample,scientific=FALSE)
 
-phecodes.dt[,id.sample:=NULL]
+phecodes.dt[,id:=NULL]
 geno <- data.frame(t(as.matrix(phecodes.dt)))
 colnames(geno) <- ids
 str(geno)
@@ -83,9 +74,9 @@ write.table(output,file="phecode-example.vcf",sep="\t",
 # step 2 Create sparse kinship matrix
 #################
 library(GENESIS)
-relatives.dt <- fread("relatives.txt")
-relatives.dt <- relatives.dt[][relatives.dt$ID1 %in% as.numeric(ids) & 
-                              relatives.dt$ID2 %in% as.numeric(ids)]
+relatives.dt <- fread("example-kin.csv")
+relatives.dt <- relatives.dt[][relatives.dt$ID1 %in% ids & 
+                              relatives.dt$ID2 %in% ids]
 # need the following when IDs are long
 #relatives.dt[,ID1:=format(ID1,scientific=FALSE)]
 #relatives.dt[,ID2:=format(ID2,scientific=FALSE)]
@@ -122,11 +113,28 @@ kin.mat.gen.sparse <- makeSparseMatrix(kin.dt,thresh=NULL)
 library(SeqVarTools)
 library(Biobase) 
 # read in phenotype data
-phenotype.dt <- fread("phenotype-example.csv")
+phenotype.dt <- fread("example-prs.csv")
 str(phenotype.dt)
-setnames(phenotype.dt,"id.sample","sample.id")
 
-phenotype.dt[,sample.id:=as.character(sample.id)]
+
+#########
+### Need to add in age and sex to phenotype.dt
+#########
+# add in sex to PRS phenotype file
+setkey(phenotype.dt,"id")
+sex.dt <- fread("example-sex.csv")
+setkey(sex.dt,"id") 
+
+# add in age to PRS phenotype file
+# use max.age for now
+phenotype.dt <- phenotype.dt[sex.dt]
+setkey(phenotype.dt,"id")
+
+setkey(ages.dt, "id") # created ages.dt in create-phecodes.R
+phenotype.dt <- phenotype.dt[ages.dt]
+
+setnames(phenotype.dt,"id","sample.id")
+#phenotype.dt[,sample.id:=as.character(sample.id)]
 my.dat <- as.data.frame(phenotype.dt)
 
 #read in genotype data
@@ -140,18 +148,29 @@ seqVCF2GDS(vcffile, gdsfile, fmt.import="DS", storage.option="ZIP_RA",
 
 #open the GDS file
 gds <- seqOpen(gdsfile)
+seqGetData(gds, "sample.id")
+#setdiff(ids,my.dat$sample.id)
+#setdiff(seqGetData(gds, "sample.id"),my.dat$sample.id)
+#setdiff(my.dat$sample.id,seqGetData(gds, "sample.id"))
+#identical(seqGetData(gds, "sample.id"),my.dat$sample.id)
 
 #Convert into SeqData format
 seqData <- SeqVarData(gds)
 str(seqData)
 
+# get my.dat into same order as in the gds file
+ordered.ids <- seqGetData(gds, "sample.id")
+my.dat <- my.dat[match(ordered.ids,my.dat$sample.id),]
+identical(seqGetData(gds, "sample.id"),my.dat$sample.id)
+
 # add phenotype data to the seqData 
 annot <- AnnotatedDataFrame(my.dat)
 sampleData(seqData) <- annot
 
+
 #run null model
 nullmod <- fitNullModel(seqData, outcome = "prs.total",
-                        covars=c("is.male","age", paste0("PC", 1:4)), 
+                        covars=c("sex","max.age"), 
                         cov.mat =kin.mat.gen.sparse, 
                         family = "gaussian")
 
@@ -192,36 +211,7 @@ phewasManhattan(mmphewas.dt, max.y=0.75,size.x.labels=40, size.y.labels=40,
   theme(title=element_text(size=40))
 dev.off()
 
-# why do I only see three points and not 4? 
-# Do I need a larger example for better plotting results
-
-#####################
 ### removed code
-for(i in 1:(length(ids)-1)){
-  for(j in (i+1):length(ids)){
-    min.id <- min(ids[i],ids[j])
-    max.id <- max(ids[i],ids[j])
-    if(min.id %in% related.ids & max.id %in% related.ids)
-    {
-      kin.value <- c(kin.value,KIN[ID1==min.id & ID2 == max.id])
-      row.id <- c(row.id,min.id)
-      col.id <- c(col.id,max.id)
-    }
-    
-  }
-}
-kin.dt <- as.data.table(cbind(as.character(row.id),as.character(col.id),
-                              as.numeric(kin.value)))
-colnames(kin.dt) <- c("ID1","ID2","value")
-str(kin.dt)
-kin.dt[,value:=as.numeric(value)]
-
-#try to shorten code for sparse matrix, but doesn't work.
-# Is it a bug in GENESIS, or am I making
-# a mistake somewhere
-relatives.dt[,ID1:=as.character(format(ID1,scientific=FALSE))]
-relatives.dt[,ID2:=as.character(format(ID2,scientific=FALSE))]
-relatives.dt[,KIN:=as.numeric(KIN)]
 
 kin.mat.gen.sparse <- makeSparseMatrix(relatives.dt, 
                                        sample.include=ids,

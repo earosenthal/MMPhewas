@@ -15,7 +15,9 @@ complement.allele <- function(allele)
   out
 }
 
-infile <- "example"
+# files should be in PLINK format, with .bed, .bim and .fam files
+
+infile <- "input-files/example"
 bedfile <- paste0(infile,".bed")
 rds <- snp_readBed(bedfile,backingfile = tempfile())
 obj.bigSNP <- snp_attach(rds)
@@ -35,7 +37,7 @@ alpha.snps.dt[,POS:=as.integer(POS)]
 
 
 # get the SNP betas
-infile <- "example-beta.csv"
+infile <- "input-files/example-beta.csv"
 prs.snps <- fread(infile)
 
 #a1 is risk allele
@@ -86,7 +88,9 @@ if(length(betas.dt$POS) > length(beta.match.dt$pos))
   setkeyv(beta.match.dt,c("pos","_NUM_ID_.ss"))
 }
 
-# impute missing genoytpes useing the mode genotype
+# impute missing SNP genoytpes at individuals using 
+# the mode genotype for that SNP
+# this does not impute genoytpes for an entire SNP 
 G2 <- snp_fastImputeSimple(G,method="mode")
 
 #calculate the chr. PRS using the betas from beta.match.dt

@@ -65,8 +65,9 @@ str(geno)
 output <- cbind(map,geno)
 setnames(output,"CHROM","#CHROM")
 
-write("##fileformat=VCFv4.0",file="phecode-example.vcf")
-write.table(output,file="phecode-example.vcf",sep="\t",
+outfile <- "phecode-example.vcf"
+write("##fileformat=VCFv4.0",file=outfile)
+write.table(output,file=outfile,sep="\t",
             quote=FALSE, row.names=FALSE, append=TRUE)
 # ignore the warning. How do I make it so that the warning about 
 # column names doesn't appear?
@@ -113,6 +114,7 @@ kin.mat.gen.sparse <- makeSparseMatrix(kin.dt,thresh=NULL)
 library(SeqVarTools)
 library(Biobase) 
 # read in phenotype data
+load("example-phecodes.RData")
 phenotype.dt <- fread("example-prs.csv")
 str(phenotype.dt)
 
@@ -130,6 +132,7 @@ setkey(sex.dt,"id")
 phenotype.dt <- phenotype.dt[sex.dt]
 setkey(phenotype.dt,"id")
 
+ages.dt <- fread("example-age.csv")
 setkey(ages.dt, "id") # created ages.dt in create-phecodes.R
 phenotype.dt <- phenotype.dt[ages.dt]
 
@@ -181,6 +184,8 @@ iterator <- SeqVarBlockIterator(seqData, verbose=FALSE)
 assoc <- assocTestSingle(iterator, nullmod)
 assoc.dt <- data.table(assoc)
 
+write.csv(assoc.dt,"mmphewas-output.csv",quote=FALSE, row.names=FALSE)
+
 ##################
 # step 5 Convert assocation results into format for phewas plotting
 ##################
@@ -212,7 +217,7 @@ phewasManhattan(mmphewas.dt, max.y=0.75,size.x.labels=40, size.y.labels=40,
 dev.off()
 
 ### removed code
-
-kin.mat.gen.sparse <- makeSparseMatrix(relatives.dt, 
-                                       sample.include=ids,
-                                       diag.value=1, thresh=NULL)
+# this didn't work for me
+#kin.mat.gen.sparse <- makeSparseMatrix(relatives.dt, 
+#                                       sample.include=ids,
+#                                       diag.value=1, thresh=NULL)

@@ -12,7 +12,7 @@ library(tidyverse)
 library(Hmisc)
 
 #step 1 Transform phecodes into a VCF file
-
+load("example-phecodes.RData")
 phecodes.dt = data.table(phenotypes) #created with create-phecodes.R
 # save the actual names to a vector
 phecode.names <- names(phecodes.dt)[-1]
@@ -75,7 +75,7 @@ write.table(output,file=outfile,sep="\t",
 # step 2 Create sparse kinship matrix
 #################
 library(GENESIS)
-relatives.dt <- fread("example-kin.csv")
+relatives.dt <- fread("input-files/example-kin.csv")
 relatives.dt <- relatives.dt[][relatives.dt$ID1 %in% ids & 
                               relatives.dt$ID2 %in% ids]
 # need the following when IDs are long
@@ -113,8 +113,7 @@ kin.mat.gen.sparse <- makeSparseMatrix(kin.dt,thresh=NULL)
 # step 3C: Combined phenotype and genotype data into a GDS file
 library(SeqVarTools)
 library(Biobase) 
-# read in phenotype data
-load("example-phecodes.RData")
+# read in PRS and covariate data
 phenotype.dt <- fread("example-prs.csv")
 str(phenotype.dt)
 
@@ -124,7 +123,7 @@ str(phenotype.dt)
 #########
 # add in sex to PRS phenotype file
 setkey(phenotype.dt,"id")
-sex.dt <- fread("example-sex.csv")
+sex.dt <- fread("input-files/example-sex.csv")
 setkey(sex.dt,"id") 
 
 # add in age to PRS phenotype file
@@ -184,7 +183,6 @@ iterator <- SeqVarBlockIterator(seqData, verbose=FALSE)
 assoc <- assocTestSingle(iterator, nullmod)
 assoc.dt <- data.table(assoc)
 
-write.csv(assoc.dt,"mmphewas-output.csv",quote=FALSE, row.names=FALSE)
 
 ##################
 # step 5 Convert assocation results into format for phewas plotting
@@ -207,6 +205,8 @@ mmphewas.dt <- map.dt[assoc.dt]
 # used by phewasManhattan
 setnames(mmphewas.dt,c("PHECODE","Est","Est.SE","Score.pval","n.obs"),
          c("phenotype","beta","SE","p","n_total"))
+
+write.csv(mmphewas.dt,"mmphewas-output.csv",quote=FALSE, row.names=FALSE)
 
 # plot the association results
 png("mmphewas.png", width=3300,height=2550)

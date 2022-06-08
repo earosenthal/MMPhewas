@@ -205,8 +205,8 @@ mmphewas.dt <- map.dt[assoc.dt]
 # used by phewasManhattan
 setnames(mmphewas.dt,c("PHECODE","Est","Est.SE","Score.pval","n.obs"),
          c("phenotype","beta","SE","p","n_total"))
-
-write.csv(mmphewas.dt,"mmphewas-output.csv",quote=FALSE, row.names=FALSE)
+results_d=addPhecodeInfo(mmphewas.dt)
+write.csv(results_d,"mmphewas-output.csv",quote=FALSE, row.names=FALSE)
 
 # plot the association results
 png("mmphewas.png", width=3300,height=2550)

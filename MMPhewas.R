@@ -209,12 +209,16 @@ results_d=addPhecodeInfo(mmphewas.dt)
 write.csv(results_d,"mmphewas-output.csv",quote=FALSE, row.names=FALSE)
 
 # plot the association results
+# Note: max.y is set to 0.75 for the example data.
+# Remove the max.y, or change it, to accomodate real data.
 png("mmphewas.png", width=3300,height=2550)
 phewasManhattan(mmphewas.dt, max.y=0.75,size.x.labels=40, size.y.labels=40, 
                 annotate.size=15, point.size=10) +
   labs(title="Mixed Model PheWAS Example") + 
   theme(title=element_text(size=40))
 dev.off()
+
+
 
 ### removed code
 # this didn't work for me

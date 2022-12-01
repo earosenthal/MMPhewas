@@ -6,10 +6,6 @@ library(data.table)
 library(PheWAS)
 
 icd.dt <- fread("input-files/example-icdcodes.csv")
-#icd.dt[,vocabulary_id:=ifelse(ICD_FLAG==9,"ICD9CM",NA)]
-#icd.dt[,vocabulary_id:=ifelse(ICD_FLAG==10,"ICD10CM",vocabulary_id)]
-#icd.dt[,ICD_FLAG:=NULL]
-#setnames(icd.dt,c("id","code","age","vocabulary_id"))
 
 # get counts of each code
 setkeyv(icd.dt,c("id","code"))
@@ -23,6 +19,32 @@ id.vocab.code.count <- icd.dt[,list(id,vocabulary_id,code,count)]
 id.vocab.code.count <- unique(id.vocab.code.count,by=c("id","vocabulary_id","code","count"))
 phenotypes = createPhenotypes(id.vocab.code.count, min.code.count=2,
                               id.sex=sex.dt,aggregate.fun=sum)
+
+#fix phecode 174 for males. Some males with breast cancer mistakenly have the female breast cancer code
+males <- sex.dt$id[sex.dt$sex=="M"]
+pheno.dt <- data.table(phenotypes)
+all.cols <- names(pheno.dt)
+(br.cancer.cols <- all.cols[all.cols %like% "174"])
+
+describe(pheno.dt[,.SD,.SDcols=br.cancer.cols])
+
+pheno.dt.males <- pheno.dt[][pheno.dt$id %in% males]
+pheno.dt.females <- pheno.dt[][!(pheno.dt$id %in% males)]
+
+describe(pheno.dt.females[,.SD,.SDcols=br.cancer.cols])
+describe(pheno.dt.males[,.SD,.SDcols=br.cancer.cols])
+pheno.dt.males[,(br.cancer.cols):=NA]
+describe(pheno.dt.males[,.SD,.SDcols=br.cancer.cols])
+
+output <- rbind(pheno.dt.males,pheno.dt.females)
+# order by ID. 
+setkey(output, "id")
+describe(output[,.SD,.SDcols=br.cancer.cols])
+
+phenotypes <- as.data.frame(output)
+str(phenotypes)
+
+
 
 save(phenotypes, file="example-phecodes.RData")
 

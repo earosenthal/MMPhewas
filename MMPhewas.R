@@ -176,6 +176,15 @@ nullmod <- fitNullModel(seqData, outcome = "prs.total",
                         cov.mat =kin.mat.gen.sparse, 
                         family = "gaussian")
 
+# get fixed effects
+output <- data.table(cbind(row.names(nullmod$fixef),nullmod$fixef))
+setnames(output,"row.names(nullmod$fixef)","variable")
+
+output[,Est:=round(Est,3)]
+output[,pval:=formatC(pval,format="e",digits=2)]
+(output <- output[,list(variable,Est,pval)])
+write.csv(output,"fixed-effects.csv",quote=FALSE, row.names=FALSE)
+
 ##################
 # step 4 Perform association
 ##################
@@ -183,6 +192,7 @@ iterator <- SeqVarBlockIterator(seqData, verbose=FALSE)
 assoc <- assocTestSingle(iterator, nullmod)
 assoc.dt <- data.table(assoc)
 
+seqClose(seqData)
 
 ##################
 # step 5 Convert assocation results into format for phewas plotting
